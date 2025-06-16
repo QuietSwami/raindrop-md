@@ -9,6 +9,7 @@ A Python CLI tool to parse a CSV export from Raindrop.io and create a directory 
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Template](#template-system)
 - [Future Enhancements](#future-enhancements)
 - [License](#license)
 
@@ -71,6 +72,75 @@ A Python CLI tool to parse a CSV export from Raindrop.io and create a directory 
      ```sh
      python raindropMD.py search <output_directory> <query>
      ```
+
+## Template System
+
+This tool supports user-editable markdown templates for generating bookmark notes. Templates are written using the [Jinja2](https://jinja.palletsprojects.com/) templating language and must follow these conventions:
+
+### Template File Requirements
+- Templates must be placed in the `templates/` directory and have the `.md.j2` extension (e.g., `bookmark_template.md.j2`).
+- The template filename is used as its identifier and is referenced in the YAML frontmatter of each generated note.
+
+### Template Syntax
+- Use Jinja2 variable syntax for bookmark fields, e.g. `{{ title }}`, `{{ url }}`, `{{ tags }}`.
+- Standard bookmark fields available:
+  - `title`, `url`, `cover`, `tags`, `created`, `favorite`, `excerpt`, `note`, `highlights`
+- You may define additional user sections by adding new variables (e.g., `{{ user_notes }}`) in the template. These will be preserved and editable in the CLI.
+- To render highlights as a list, use a Jinja2 loop:
+  ```jinja
+  {% if highlights %}
+  ### Highlights:
+  {% for h in highlights %}
+  > {{ h }}
+  {% endfor %}
+  {% endif %}
+  ```
+- You can use any valid Jinja2 syntax for formatting, conditionals, and loops.
+
+### YAML Frontmatter
+- Each generated note includes YAML frontmatter indicating the template used:
+  ```yaml
+  ---
+  template: bookmark_template.md.j2
+  ---
+  ```
+- The tool uses this field to ensure the correct template is used for editing and parsing.
+
+### Example Template
+```
+---
+template: bookmark_template.md.j2
+---
+## [{{ title }}]({{ url }})
+{% if cover %}![cover image]({{ cover }}){% endif %}
+**Tags:** {{ tags }}
+**Created:** {{ created }}
+{% if favorite %}⭐ **Favorite**{% endif %}
+{% if excerpt %}
+_Excerpt:_ {{ excerpt }}
+{% endif %}
+{% if note %}
+_Note:_ {{ note }}
+{% endif %}
+{% if highlights %}
+### Highlights:
+{% for h in highlights %}
+> {{ h }}
+{% endfor %}
+{% endif %}
+```
+
+### User-Defined Sections
+- Any variable in the template that is not a standard bookmark field is treated as a user-defined section (e.g., `{{ user_notes }}`).
+- The CLI will prompt for these sections when creating or editing notes, and will preserve their content on update.
+
+### Template Best Practices
+- Use clear section headers (e.g., `### Notes`) for user-defined sections.
+- Avoid duplicate variable names.
+- Test your template with a sample bookmark to ensure all fields render as expected.
+
+See the `templates/` directory for working examples.
+
 
 ## TODOs
 - [x] Improve CLI output

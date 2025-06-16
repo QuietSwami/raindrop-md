@@ -47,10 +47,15 @@ class TestRaindropCSVToMarkdown(unittest.TestCase):
 
     def test_remove_bookmark_interactive_dir(self):
         bookmarks = parse_raindrop_csv(self.csv_file.name)
-        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path)
+        from raindropMD import get_templates_folder
+        base_dir = Path(__file__).parent
+        templates_dir = get_templates_folder(base_dir)
+        # Use a template for writing bookmarks so frontmatter is present
+        template_path = templates_dir / 'bookmark_template.md.j2'
+        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path, template_path)
         import builtins
         orig_input = builtins.input
-        builtins.input = lambda _: '1'  # Select first bookmark
+        builtins.input = lambda *args, **kwargs: '1'  # Accept any args
         try:
             remove_bookmark_interactive_dir(self.bookmark_dir_path)
             files = list(self.bookmark_dir_path.glob('*.md'))
@@ -60,14 +65,18 @@ class TestRaindropCSVToMarkdown(unittest.TestCase):
 
     def test_edit_bookmark_interactive_dir(self):
         bookmarks = parse_raindrop_csv(self.csv_file.name)
-        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path)
+        from raindropMD import get_templates_folder
+        base_dir = Path(__file__).parent
+        templates_dir = get_templates_folder(base_dir)
+        template_path = templates_dir / 'bookmark_template.md.j2'
+        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path, template_path)
         import builtins
         orig_input = builtins.input
         # Select first bookmark and change its title
         inputs = iter(['1', 'Edited Title', '', '', '', '', '', '', ''])
-        builtins.input = lambda _: next(inputs)
+        builtins.input = lambda *args, **kwargs: next(inputs)
         try:
-            edit_bookmark_interactive_dir(self.bookmark_dir_path)
+            edit_bookmark_interactive_dir(self.bookmark_dir_path, templates_dir)
             files = list(self.bookmark_dir_path.glob('*.md'))
             with open(files[0], 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -77,30 +86,42 @@ class TestRaindropCSVToMarkdown(unittest.TestCase):
 
     def test_fuzzy_search_bookmarks_dir(self):
         bookmarks = parse_raindrop_csv(self.csv_file.name)
-        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path)
-        import builtins
-        orig_print = builtins.print
-        output = []
-        builtins.print = lambda *args, **kwargs: output.append(' '.join(str(a) for a in args))
+        from raindropMD import get_templates_folder
+        base_dir = Path(__file__).parent
+        templates_dir = get_templates_folder(base_dir)
+        template_path = templates_dir / 'bookmark_template.md.j2'
+        write_bookmarks_to_dir(bookmarks, self.bookmark_dir_path, template_path)
+        from rich.console import Console as RichConsole
+        test_console = RichConsole(record=True)
+        import raindropMD
+        orig_console = raindropMD.console
+        raindropMD.console = test_console
         try:
-            fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'test')
-            self.assertTrue(any('Test Title' in line for line in output))
-            output.clear()
-            fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'nonsensequery')
-            self.assertTrue(any('No bookmarks matched the query' in line for line in output))
+            raindropMD.fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'test', templates_dir)
+            output = test_console.export_text()
+            self.assertIn('Test Title', output)
+            test_console.clear()
+            raindropMD.fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'nonsensequery', templates_dir)
+            output = test_console.export_text()
+            self.assertIn('No bookmarks matched the query', output)
         finally:
-            builtins.print = orig_print
+            raindropMD.console = orig_console
 
     def test_fuzzy_search_bookmarks_dir_empty(self):
-        import builtins
-        orig_print = builtins.print
-        output = []
-        builtins.print = lambda *args, **kwargs: output.append(' '.join(str(a) for a in args))
+        from rich.console import Console as RichConsole
+        test_console = RichConsole(record=True)
+        import raindropMD
+        orig_console = raindropMD.console
+        raindropMD.console = test_console
+        from raindropMD import get_templates_folder
+        base_dir = Path(__file__).parent
+        templates_dir = get_templates_folder(base_dir)
         try:
-            fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'anything')
-            self.assertTrue(any('No bookmark files found' in line for line in output))
+            raindropMD.fuzzy_search_bookmarks_dir(self.bookmark_dir_path, 'anything', templates_dir)
+            output = test_console.export_text()
+            self.assertIn('No bookmark files found', output)
         finally:
-            builtins.print = orig_print
+            raindropMD.console = orig_console
 
 if __name__ == '__main__':
     unittest.main()
