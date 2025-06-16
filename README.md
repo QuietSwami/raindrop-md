@@ -141,7 +141,7 @@ See the `templates/` directory for working examples.
 
 ## TODOs
 - [x] Improve CLI output
-- [ ] Add markdown template customization
+- [x] Add markdown template customization
 - [ ] Improve bookmark editing
 - [ ] Add Raindrop API use to automate CSV export
 
