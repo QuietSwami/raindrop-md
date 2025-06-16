@@ -73,8 +73,8 @@ A Python CLI tool to parse a CSV export from Raindrop.io and create a directory 
      ```
 
 ## TODOs
-- [ ] Add markdown output customization
-- [ ] Improve CLI 
+- [x] Improve CLI output
+- [ ] Add markdown template customization
 - [ ] Improve bookmark editing
 - [ ] Add Raindrop API use to automate CSV export
 

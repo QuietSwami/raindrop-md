@@ -7,6 +7,11 @@ import click
 import logging
 import re
 import shutil
+from rich.console import Console
+from rich.table import Table
+from rich.prompt import Prompt
+from rich.text import Text
+from rich.panel import Panel
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +19,7 @@ logging.basicConfig(
     format='[%(levelname)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
+console = Console()
 
 class Bookmark:
     """A class representing a Raindrop.io bookmark and its metadata."""
@@ -124,26 +130,29 @@ def parse_raindrop_csv(csv_path: str) -> List[Bookmark]:
                     )
                     bookmarks.append(bookmark)
             except csv.Error as e:
-                logger.error(f"Failed to parse CSV file '{csv_path}': {e}")
+                console.print(Panel(f"Failed to parse CSV file: [bold red]{csv_path}[/bold red]\n[red]{e}[/red]", title="[bold red]CSV Parse Error[/bold red]", style="red"))
+                console.print("[yellow]Please check the CSV format and try again.[/yellow]")
                 sys.exit(1)
     except FileNotFoundError:
-        logger.error(f"File not found: '{csv_path}'. Please check the path and try again.")
+        console.print(Panel(f"File not found: [bold red]{csv_path}[/bold red]", title="[bold red]File Not Found[/bold red]", style="red"))
+        console.print("[yellow]Please check the path and try again.[/yellow]")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Unexpected error opening file '{csv_path}': {e}")
+        console.print(Panel(f"Unexpected error opening file: [bold red]{csv_path}[/bold red]\n[red]{e}[/red]", title="[bold red]File Error[/bold red]", style="red"))
         sys.exit(1)
     return bookmarks
 
 def parse_markdown_file(md_path: str) -> List[Bookmark]:
     """Parse an existing markdown file into a list of Bookmark objects."""
     if not Path(md_path).is_file():
-        logger.error(f"Markdown file not found: '{md_path}'. Please check the path and try again.")
+        console.print(Panel(f"Markdown file not found: [bold red]{md_path}[/bold red]", title="[bold red]File Not Found[/bold red]", style="red"))
+        console.print("[yellow]Please check the path and try again.[/yellow]")
         return []
     try:
         with open(md_path, 'r', encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        logger.error(f"Could not read markdown file '{md_path}': {e}")
+        console.print(Panel(f"Could not read markdown file: [bold red]{md_path}[/bold red]\n[red]{e}[/red]", title="[bold red]File Read Error[/bold red]", style="red"))
         return []
     # Split by '## [' which starts each bookmark, but keep the delimiter
     import re
@@ -157,9 +166,9 @@ def parse_markdown_file(md_path: str) -> List[Bookmark]:
                 if bm.title and bm.url:
                     bookmarks.append(bm)
                 else:
-                    logger.warning(f"Skipped malformed bookmark block: missing title or url.")
+                    console.print(Panel(f"Skipped malformed bookmark block: missing title or url.", title="[yellow]Warning[/yellow]", style="yellow"))
             except Exception as e:
-                logger.warning(f"Failed to parse a bookmark block: {e}")
+                console.print(Panel(f"Failed to parse a bookmark block:\n[red]{e}[/red]", title="[yellow]Warning[/yellow]", style="yellow"))
     return bookmarks
 
 def bookmarks_to_markdown(bookmarks: List[Bookmark]) -> str:
@@ -169,7 +178,7 @@ def bookmarks_to_markdown(bookmarks: List[Bookmark]) -> str:
         try:
             md_lines.append(bm.to_markdown())
         except Exception as e:
-            logger.error(f"Error processing bookmark: {e}")
+            console.print(Panel(f"Error processing bookmark:\n[red]{e}[/red]", title="[yellow]Warning[/yellow]", style="yellow"))
             continue
     return ''.join(md_lines)
 
@@ -179,88 +188,114 @@ def write_markdown(md_content: str, md_path: str):
         with open(md_path, 'w', encoding='utf-8') as mdfile:
             mdfile.write(md_content)
     except Exception as e:
-        logger.error(f"Failed to write markdown file '{md_path}': {e}")
+        console.print(Panel(f"Failed to write markdown file: [bold red]{md_path}[/bold red]\n[red]{e}[/red]", title="[bold red]File Write Error[/bold red]", style="red"))
         sys.exit(1)
 
 def list_bookmark_files(bookmark_dir: Path):
-    return sorted([f for f in bookmark_dir.glob('*.md') if f.is_file()])
+    if not bookmark_dir.exists() or not bookmark_dir.is_dir():
+        console.print(Panel(f"Directory not found: [bold red]{bookmark_dir}[/bold red]", title="[red]Error[/red]", style="red"))
+        return []
+    files = sorted([f for f in bookmark_dir.iterdir() if f.suffix == ".md" and f.is_file()])
+    if not files:
+        console.print(Panel(f"No markdown files found in directory: [bold yellow]{bookmark_dir}[/bold yellow]", title="[yellow]Warning[/yellow]", style="yellow"))
+    return files
 
 def print_bookmarks_from_dir(bookmark_dir: Path):
     files = list_bookmark_files(bookmark_dir)
     if not files:
-        print(f"No bookmark files found in {bookmark_dir}.")
+        console.print(f"[bold red]No bookmark files found in {bookmark_dir}.[/bold red]")
         return
-    print(f"Found {len(files)} bookmarks in {bookmark_dir}:")
+    table = Table(title=f"Bookmarks in {bookmark_dir}")
+    table.add_column("No.", style="cyan", width=4)
+    table.add_column("Title", style="bold")
+    table.add_column("Tags", style="magenta")
+    table.add_column("Created", style="green")
+    table.add_column("Favorite", style="yellow", justify="center")
     for i, f in enumerate(files, 1):
         with open(f, 'r', encoding='utf-8') as md:
-            title = re.search(r'## \[(.*?)\]', md.read())
-            title = title.group(1) if title else f.name
-        print(f"{i}. {title} ({f.name})")
+            content = md.read()
+        title = re.search(r'## \[(.*?)\]', content)
+        title = title.group(1) if title else f.name
+        tags = re.search(r'\*\*Tags:\*\* (.*)', content)
+        tags = tags.group(1) if tags else ''
+        created = re.search(r'\*\*Created:\*\* (.*)', content)
+        created = created.group(1) if created else ''
+        favorite = "⭐" if "⭐" in content else ""
+        table.add_row(str(i), title, tags, created, favorite)
+    console.print(table)
 
 def remove_bookmark_interactive_dir(bookmark_dir: Path):
     files = list_bookmark_files(bookmark_dir)
     if not files:
-        print(f"No bookmark files found in {bookmark_dir}.")
+        console.print(Panel("No bookmark files found in [bold yellow]{}[/bold yellow].".format(bookmark_dir), title="[red]Error[/red]", style="red"))
         return
-    print(f"Select a bookmark to remove:")
+    console.print(Panel("Select a bookmark to remove:", title="[bold]Remove Bookmark[/bold]", style="yellow"))
     for i, f in enumerate(files, 1):
         with open(f, 'r', encoding='utf-8') as md:
-            title = re.search(r'## \[(.*?)\]', md.read())
+            title = re.search(r'## \\[(.*?)\\]', md.read())
             title = title.group(1) if title else f.name
-        print(f"{i}. {title} ({f.name})")
+        console.print(f"[cyan]{i}.[/cyan] {title} ([dim]{f.name}[/dim])")
     try:
-        choice = int(input("Enter the number to remove (0 to cancel): "))
+        choice = Prompt.ask("Enter the number to remove (0 to cancel)", default="0")
+        choice = int(choice)
         if choice < 1 or choice > len(files):
-            print("Cancelled or invalid selection.")
+            console.print(Panel("Cancelled or invalid selection.", title="[yellow]Cancelled[/yellow]", style="yellow"))
             return
         to_remove = files[choice-1]
         to_remove.unlink()
-        print(f"Removed bookmark file: {to_remove.name}")
-    except Exception:
-        print("Invalid input.")
+        console.print(Panel(f"Removed bookmark file: [bold green]{to_remove.name}[/bold green]", title="[green]Success[/green]", style="green"))
+    except Exception as e:
+        console.print(Panel(f"Invalid input or error: {e}", title="[red]Error[/red]", style="red"))
 
 def edit_bookmark_interactive_dir(bookmark_dir: Path):
     files = list_bookmark_files(bookmark_dir)
     if not files:
-        print(f"No bookmark files found in {bookmark_dir}.")
+        console.print(f"[bold red]No bookmark files found in {bookmark_dir}.[/bold red]")
         return
-    print(f"Select a bookmark to edit:")
+    table = Table(title="Select a bookmark to edit", show_lines=True)
+    table.add_column("No.", style="cyan", width=4)
+    table.add_column("Title", style="bold")
+    table.add_column("File", style="dim")
     for i, f in enumerate(files, 1):
         with open(f, 'r', encoding='utf-8') as md:
-            title = re.search(r'## \[(.*?)\]', md.read())
-            title = title.group(1) if title else f.name
-        print(f"{i}. {title} ({f.name})")
+            content = md.read()
+        title = re.search(r'## \[(.*?)\]', content)
+        title = title.group(1) if title else f.name
+        table.add_row(str(i), title, f.name)
+    console.print(table)
     try:
-        choice = int(input("Enter the number to edit (0 to cancel): "))
+        choice = Prompt.ask("Enter the number to edit (0 to cancel)", default="0")
+        choice = int(choice)
         if choice < 1 or choice > len(files):
-            print("Cancelled or invalid selection.")
+            console.print("[yellow]Cancelled or invalid selection.[/yellow]")
             return
         fpath = files[choice-1]
         with open(fpath, 'r', encoding='utf-8') as f:
             content = f.read()
         bm = Bookmark.from_markdown(content)
-        print(f"Editing bookmark: {bm.title} ({bm.url})")
-        bm.title = input(f"Title [{bm.title}]: ") or bm.title
-        bm.note = input(f"Note [{bm.note}]: ") or bm.note
-        bm.excerpt = input(f"Excerpt [{bm.excerpt}]: ") or bm.excerpt
-        bm.tags = input(f"Tags (comma separated) [{bm.tags}]: ") or bm.tags
-        bm.created = input(f"Created [{bm.created}]: ") or bm.created
-        bm.cover = input(f"Cover URL [{bm.cover}]: ") or bm.cover
-        bm.highlights = input(f"Highlights (use 'Highlight:' as separator) [{bm.highlights}]: ") or bm.highlights
-        bm.favorite = input(f"Favorite (true/false) [{bm.favorite}]: ") or bm.favorite
+        # Show preview before editing
+        console.print(Panel.fit(content, title=f"Editing: {bm.title}", subtitle=f"File: {fpath.name}"))
+        bm.title = Prompt.ask(f"Title", default=bm.title)
+        bm.note = Prompt.ask(f"Note", default=bm.note)
+        bm.excerpt = Prompt.ask(f"Excerpt", default=bm.excerpt)
+        bm.tags = Prompt.ask(f"Tags (comma separated)", default=bm.tags)
+        bm.created = Prompt.ask(f"Created", default=bm.created)
+        bm.cover = Prompt.ask(f"Cover URL", default=bm.cover)
+        bm.highlights = Prompt.ask(f"Highlights (use 'Highlight:' as separator)", default=bm.highlights)
+        bm.favorite = Prompt.ask(f"Favorite (true/false)", default=bm.favorite)
         with open(fpath, 'w', encoding='utf-8') as f:
             f.write(bm.to_markdown())
-        print(f"Updated bookmark: {bm.title} ({bm.url})")
-    except Exception:
-        print("Invalid input.")
+        console.print(f"[green]Updated bookmark:[/green] {bm.title} ({bm.url})")
+    except Exception as e:
+        console.print(f"[red]Invalid input or error: {e}[/red]")
 
 def fuzzy_search_bookmarks_dir(bookmark_dir: Path, query: str):
     files = list_bookmark_files(bookmark_dir)
     if not files:
-        print(f"No bookmark files found in {bookmark_dir}.")
+        console.print(f"[bold red]No bookmark files found in {bookmark_dir}.[/bold red]")
         return
     from difflib import SequenceMatcher
-    query = query.lower()
+    query_lower = query.lower()
     results = []
     for f in files:
         with open(f, 'r', encoding='utf-8') as md:
@@ -271,17 +306,36 @@ def fuzzy_search_bookmarks_dir(bookmark_dir: Path, query: str):
             if not text:
                 return 0
             text = str(text).lower()
-            return SequenceMatcher(None, query, text).ratio()
+            return SequenceMatcher(None, query_lower, text).ratio()
         score = max(match_score(fld) for fld in fields)
-        if score > 0.3 or any(query in str(fld).lower() for fld in fields if fld):
-            results.append((score, bm, f.name))
+        if score > 0.3 or any(query_lower in str(fld).lower() for fld in fields if fld):
+            results.append((score, bm, f.name, content))
     results.sort(reverse=True, key=lambda x: x[0])
     if not results:
-        print(f"No bookmarks matched the query: '{query}'")
+        console.print(f"[yellow]No bookmarks matched the query: '{query}'[/yellow]")
         return
-    print(f"Found {len(results)} matching bookmarks:")
-    for i, (score, bm, fname) in enumerate(results, 1):
-        print(f"{i}. {bm.title} ({bm.url}) [{fname}] [score: {score:.2f}]")
+    table = Table(title=f"Search Results for '{query}'", show_lines=True)
+    table.add_column("No.", style="cyan", width=4)
+    table.add_column("Title", style="bold")
+    table.add_column("Tags", style="magenta")
+    table.add_column("Created", style="green")
+    table.add_column("Favorite", style="yellow", justify="center")
+    table.add_column("File", style="dim")
+    for i, (score, bm, fname, content) in enumerate(results, 1):
+        # Highlight query in title
+        title_text = Text(bm.title)
+        if query_lower in bm.title.lower():
+            start = bm.title.lower().index(query_lower)
+            title_text.stylize("bold red", start, start+len(query))
+        tags = bm.tags
+        created = bm.created
+        favorite = "⭐" if bm.favorite and bm.favorite.lower() == 'true' else ""
+        table.add_row(str(i), title_text, tags, created, favorite, fname)
+    console.print(table)
+    # Preview the first result
+    if results:
+        score, bm, fname, content = results[0]
+        console.print(Panel.fit(content, title=f"Preview: {bm.title}", subtitle=f"File: {fname}"))
 
 def sanitize_title(title: str) -> str:
     # Remove non-alphanumeric characters, replace spaces with underscores, and truncate
@@ -300,22 +354,30 @@ def zettelkasten_filename(bookmark: Bookmark) -> str:
     return f"{dt.strftime('%Y%m%d%H%M')}_{sanitize_title(bookmark.title)}.md"
 
 def write_bookmarks_to_dir(bookmarks: List[Bookmark], out_dir: Path):
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not out_dir.exists():
+        try:
+            out_dir.mkdir(parents=True)
+            console.print(Panel(f"Created output directory: [bold green]{out_dir}[/bold green]", title="[green]Success[/green]", style="green"))
+        except Exception as e:
+            console.print(Panel(f"Failed to create output directory: {e}", title="[red]Error[/red]", style="red"))
+            sys.exit(1)
     for bm in bookmarks:
-        fname = zettelkasten_filename(bm)
-        fpath = out_dir / fname
-        with open(fpath, 'w', encoding='utf-8') as f:
-            f.write(bm.to_markdown())
-    logger.info(f"Wrote {len(bookmarks)} bookmarks to {out_dir}")
+        try:
+            filename = zettelkasten_filename(bm)
+            file_path = out_dir / filename
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(bm.to_markdown())
+        except Exception as e:
+            console.print(Panel(f"Failed to write bookmark '{getattr(bm, 'title', 'Unknown')}' to file: {e}", title="[red]Error[/red]", style="red"))
 
 def create_or_update_markdown(csv_path: str, out_dir: Path):
     """Parse CSV and write each bookmark to a separate markdown file in out_dir."""
     csv_bookmarks = parse_raindrop_csv(csv_path)
     if not csv_bookmarks:
-        print("No bookmarks found in the CSV file.")
+        console.print(Panel("No bookmarks found in the CSV file.", title="[red]Error[/red]", style="red"))
         sys.exit(1)
     write_bookmarks_to_dir(csv_bookmarks, out_dir)
-    print(f"Bookmark files created/updated in: {out_dir}")
+    console.print(Panel(f"Bookmark files created/updated in: [bold green]{out_dir}[/bold green]", title="[green]Success[/green]", style="green"))
 
 @click.group()
 def cli():
