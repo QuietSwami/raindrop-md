@@ -108,9 +108,6 @@ This tool supports user-editable markdown templates for generating bookmark note
 
 ### Example Template
 ```
----
-template: bookmark_template.md.j2
----
 ## [{{ title }}]({{ url }})
 {% if cover %}![cover image]({{ cover }}){% endif %}
 **Tags:** {{ tags }}
